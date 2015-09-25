@@ -4,10 +4,14 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.Vector;
 
 import NET.sourceforge.BplusJ.BplusJ.xBplusTreeBytes;
 import datamanagement.Pair;
+import urSQL.System.TableAttribute;
+import urSQL.System.TableMetadata;
 
 /**
  * Objeto que administra la forma de adminstrar los 
@@ -40,32 +44,9 @@ public class StoreDataManager {
 	 * una tabla
 	 */
 	
-	/***************************STRINGS PARA TIPOS*****************************/
-	
-	/**
-	 * Tipo que representa el entero
-	 */
-	public static final String TYPE_INTEGER = "INTEGER";
-	/**
-	 * Tipo que representa el double 
-	 */
-	public static final String TYPE_DECIMAL = "DECIMAL";
-	/**
-	 * Tipo que representa el char
-	 */
-	public static final String TYPE_CHAR = "CHAR";
-	/**
-	 * tipo que representa el varchar
-	 */
-	public static final String TYPE_VARCHAR = "VARCHAR";
-	/**
-	 * Representa el tipo nulo 
-	 */
-	public static final String TYPE_NULL = "NULL";
-	
 	/**************************TIPOS EN BYTES******************************/
 	
-	private static final byte BY_TYPE_NULL = (byte)0x00;
+	private static final byte NULL_VALUE = (byte)0x00;
 	
 	private static final byte BY_TYPE_INTEGER = (byte)0x01;
 	
@@ -74,6 +55,8 @@ public class StoreDataManager {
 	private static final byte BY_TYPE_VARCHAR = (byte)0x03;
 	
 	private static final byte BY_TYPE_DECIMAL = (byte)0x04;
+	
+	private static final byte BY_TYPE_DATE = (byte)0x05;
 	
 	/**************************KEYS DE CONTROL****************************/
 	
@@ -84,7 +67,13 @@ public class StoreDataManager {
 	/**
 	 * Ubica el indice de la llave primaria
 	 */
-	private static final String PK_INDEX = " PK"; 
+	private static final String PK_INDEX = " PK";
+	
+	/**
+	 * Indice donde se almacena la 
+	 * metadatada para ser recuperada
+	 */
+	private static final String METADATA_KEY = " METADATA";
 	
 	/**
 	 * Crea la carpeta de las bases de datos si estas no existen.
@@ -221,7 +210,9 @@ public class StoreDataManager {
 	 * @param dabase_name nombre de la base de datos
 	 * en la que se va a crear la tabla.
 	 */
-	public void createTable(String table_name, int col_quant, int pk_index, String database_name){
+	public void createTable(String database_name, TableMetadata metadata){
+		//nombre de la base de datos
+		String table_name  = metadata.getTableName();
 		//se crea el directorio a ver si existe
 		File database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 		
@@ -238,21 +229,27 @@ public class StoreDataManager {
 				xBplusTreeBytes tree = xBplusTreeBytes.Initialize(new RandomAccessFile(tree_file, "rw"),
 						new RandomAccessFile(block_file, "rw"), 10);
 				//guarda en el arbol la cantidad de columnas 
-				short colq_q_sh = (short) col_quant;
-				byte[] colq_quant_by = ByteBuffer.allocate(2).putShort(colq_q_sh).array();
+				short colq_q_sh = (short) metadata.getTableColumns().size();
+				byte[] colq_quant_by = short2bytes(colq_q_sh);
 				
 				tree.set(COLUMN_QUANTITY_KEY, colq_quant_by);
 				
 				//agrega el indice de la llave primaria
-				short pk_index_sh = (short) pk_index;
-				byte[] pk_index_by = ByteBuffer.allocate(2).putShort(pk_index_sh).array();
+				short pk_index_sh = (short) metadata.getTableColumns().indexOf(metadata.getPrimaryKey());
+				byte[] pk_index_by = short2bytes(pk_index_sh);
 				
 				tree.set(PK_INDEX, pk_index_by);
+				
+				byte[] columns_metadata = writeMetadata(metadata);
+				
+				tree.set(METADATA_KEY, columns_metadata);
+				
 				
 				//se envia todo al arbol
 				tree.Commit();
 				
-				if(tree.ContainsKey(COLUMN_QUANTITY_KEY) && tree.ContainsKey(PK_INDEX)){
+				if(tree.ContainsKey(COLUMN_QUANTITY_KEY) && tree.ContainsKey(PK_INDEX) &&
+						tree.ContainsKey(METADATA_KEY)){
 					System.out.format("La tabla %s ha sido creada correctamente\n", table_name);
 				}else{
 					System.err.format("Hubo un problema al crear la tabla %s\n", table_name);
@@ -274,6 +271,73 @@ public class StoreDataManager {
 	}
 
 	/**
+	 * Este metodo convierte la lista de atributos de tabla y los 
+	 * pasa a arreglos de datos
+	 * 
+	 * @param metadata información que uno le importa 
+	 * 
+	 * @return byte[]con el arraylist
+	 */
+	private byte[] writeMetadata(TableMetadata metadata){
+		//se saca un iterador de la lista de atributos
+		Iterator<TableAttribute> iterator = metadata.getTableColumns().iterator();
+		//array que a a ser el resultado
+		byte[] result = attribute2bytes(iterator.next());
+		
+		while (iterator.hasNext()) {
+			TableAttribute attribute = iterator.next();
+			
+			byte[] tmp_array = attribute2bytes(attribute);
+			//se concatenan ambos array para crear uno con toda la
+			//metadata
+			result = byteArrayConcatenate(result, tmp_array);
+			
+		}
+		
+		return result;
+	}
+	
+	/**
+	 * Convierte los atributos a bytes 
+	 * 
+	 * @param attribute atributo a convertir a bytes
+	 * 
+	 * @return un arreglo de bytes con toda la 
+	 * informacion dle registro
+	 */
+	private byte[] attribute2bytes(TableAttribute attribute){
+		byte[] byte_type = new byte[1];
+		switch(attribute.getType()){
+			case TableAttribute.TYPE_INT:
+				byte_type[0] = BY_TYPE_INTEGER;
+				break;
+			case TableAttribute.TYPE_DECIMAL:
+				byte_type[0] = BY_TYPE_INTEGER;
+				break;
+			case TableAttribute.TYPE_CHAR:
+				byte_type[0] = BY_TYPE_CHAR;
+				break;
+			case TableAttribute.TYPE_VARCHAR:
+				byte_type[0] = BY_TYPE_VARCHAR;
+				break;
+			case TableAttribute.TYPE_DATETIME:
+				byte_type[0] = BY_TYPE_DATE;
+				break;
+		}
+		byte[] by_str = attribute.getName().getBytes();
+		//bytes del registro y el tipo 
+		byte[] reg =  byteArrayConcatenate(byte_type, by_str);
+		
+		short size = (short)reg.length;
+		//cuantos bytes ocupa el registro
+		byte[] by_size = short2bytes(size);
+		
+		return byteArrayConcatenate(by_size, reg);
+	}
+	
+	
+	
+	/**
 	 * Agrega una fila en una tabla de una base de datos.
 	 * 
 	 * @param database_name Nombre de la base de datos.
@@ -283,9 +347,11 @@ public class StoreDataManager {
 	 * @param vec Vector qeu contiene los tipos y datos a 
 	 * insertar en la tabla.
 	 */
-	public void insertRow(String database_name, String table_name, Vector<Pair<String,String>> vec ){
+	public void insertRow(String database_name, TableMetadata metadata, String[] data){
 		//se verifica que exista la carpeta de bases de datos
 		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		//nombre de la tabla
+		String table_name = metadata.getTableName();
 		if(!file_tree.exists()){
 			//la base de datos no existe
 			System.err.format("La base de datos con el nombre %s no ha sido creada\n", database_name);
@@ -303,20 +369,47 @@ public class StoreDataManager {
 				try {
 					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
 							new RandomAccessFile(file_blocks, "rw"));
-					//se busca la cantidad de columnas
-					byte[] b_columns = tree.get(COLUMN_QUANTITY_KEY);
-					short columns_q = ByteBuffer.wrap(b_columns).getShort();
 					//se obtiene el indice de la llave primaria
 					byte[] b_pk_index = tree.get(PK_INDEX);
-					short pk_index = ByteBuffer.wrap(b_pk_index).getShort();
+					int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
 					
-					if(vec.size() != columns_q){
-						System.err.format("La fila debe tener %d columnas \n", (int)columns_q);
+					String key = data[pk_index];
+					
+					if(metadata.getTableColumns().size() != data.length){
+						System.err.format("La fila debe tener %d columnas \n", metadata.getTableColumns().size());
 					}
 					//si cumple con la cantidad de columnas
 					else {
-						
-						insertRowAux(pk_index, tree ,vec);
+						//Si la llave primaria es nula
+						if(key.compareTo("null") == 0){
+							System.err.format("La llave primaria de la fila es nula");
+							tree.Shutdown();
+						}
+						//si la llave ya esta
+						else if(tree.ContainsKey(key)){
+							System.err.format("La llave primaria ya se encuentra en el arbol");
+							tree.Shutdown();
+						}
+						//inserta si no hay problema con la llave
+						else{
+							//se cre aun vector con pares de tipo y datos 
+							//a partir de el data y metadata
+							Vector<Pair<String,String>> vec = convert2vec(metadata.getTableColumns(), data);
+							//crea el registro de bytes
+							byte[] register = toBytes(vec);
+							//se escribe en el arbol la fila
+							tree.set(key, register);
+							//se verifica que se haya insertado
+							if(!tree.ContainsKey(key)){
+								System.err.format("La fila de llave %s de la tabla %s no se pudo insertar correctamente\n",
+										key, table_name);
+							}
+							else{
+								tree.Commit();
+								tree.Shutdown();
+							}
+							
+						}
 					}
 					
 				} catch (FileNotFoundException e) {
@@ -331,58 +424,30 @@ public class StoreDataManager {
 	}
 	
 	/**
-	 * Recibe los datos sin ser pasados a bytes y los transforma,
-	 * ademas de que encuentra la llave primaria
+	 * A partir de los datos y el metadata crea un vector donde une 
+	 * los datos con el tipo de dato
 	 * 
-	 * @param pk_index poscion de la llave primaria
+	 * @param metadata Información de las columnas de la tabla 
 	 * 
-	 * @param tree arbol donde se va a almacenar los valores de
-	 * la fila
+	 * @param data información que se va a guardar en la tabla
 	 * 
-	 * @param vec Vector con los pares de tipo e información
+	 * @return Vector de {@link Pair<{@link String},{@link String}>}
 	 */
-	private void insertRowAux(int pk_index, xBplusTreeBytes tree ,Vector<Pair<String,String>> vec){
-		//si la llave primaria es nula
-		if(vec.get(pk_index).getFirst().compareTo(TYPE_NULL) == 0){
-			System.err.format("La llave primaria es nula\n");
+	private Vector<Pair<String, String>> convert2vec(ArrayList<TableAttribute> metadata, String[] data){
+		//crea el nuevo vector
+		Vector<Pair<String, String>> result = new Vector<Pair<String, String>>();
+		//iterator de la lista
+		Iterator<TableAttribute> iterator = metadata.iterator();
+		//empareja tipo con el dato
+		for (int i = 0; i < data.length && iterator.hasNext(); i++) {
+			TableAttribute tatt = iterator.next();
+			Pair<String, String> tmp = new Pair<String,String>(tatt.getType(), data[i]);
+			result.addElement(tmp);
 		}
-		else{
-			//llave de la fila
-			String key = vec.get(pk_index).getSecond();
-			
-			try {
-				if(tree.ContainsKey(key)){
-					System.err.format("En la tabla que quiere insertar la llave primaria %s ya fue insetada", key);
-				}
-				else{
-					//transforma todo a bytes
-					byte[] reg =  toBytes(vec);
-					//escribe los datos en el arbol
-					try {
-						//agrega el registro
-						tree.set(key, reg);
-						tree.Commit();
-						//se comprueba que este en el arbol
-						if(!tree.ContainsKey(key)){
-							System.err.format("La fila con la llave %s no se inserto correctamente\n", key);
-						}
-						else{
-							System.out.format("La fila con la llave %s fue insertada con exito\n", key);
-							System.out.format("Tamaño del registro: %d\n", tree.get(key).length);
-						}
-						//cierra el arbol
-						tree.Shutdown();
-					} catch (Exception e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-				}
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		}
+		//retorna un vector de pares
+		return result;
 	}
+	
 	
 	/**
 	 * Pasa a bytes la información que se quiere almacenar
@@ -410,6 +475,44 @@ public class StoreDataManager {
 		}
 		//concatena todos los arreglos
 		return concatenateByteArray(res);
+	}
+	
+	/**
+	 * Se pasan todos los tipos con su respectivo encabezado
+	 * para ser leidos cuando son extraídos
+	 * 
+	 * @param type Tipo de información que se almacena dentro
+	 * en el registro
+	 * 
+	 * @param data información que se almacena en el registro
+	 * 
+	 * @return un arreglo de bytes que representa al registro 
+	 * completo
+	 */
+	private byte[] toBytesAux(String type, String data){
+		switch(type){
+			case TableAttribute.TYPE_INT:
+				int integer = Integer.parseInt(data);
+				byte[] integer_array = int2bytes(integer);
+				return makeRegister(BY_TYPE_INTEGER, integer_array.length, integer_array);
+				
+			case TableAttribute.TYPE_DECIMAL:
+				float float_value = Float.parseFloat(data);
+				byte[] float_array = float2bytes(float_value);
+				return makeRegister(BY_TYPE_DECIMAL, float_array.length, float_array);
+				
+			case TableAttribute.TYPE_CHAR:
+				byte[] char_array = data.getBytes();
+				return makeRegister(BY_TYPE_CHAR, char_array.length, char_array);
+				
+			case TableAttribute.TYPE_DATETIME:
+				byte[] date_array = data.getBytes();
+				return makeRegister(BY_TYPE_DATE, date_array.length, date_array);
+				
+			default:
+				byte[] string_array = data.getBytes();
+				return makeRegister(BY_TYPE_VARCHAR, string_array.length, string_array);
+		}
 	}
 	
 	/**
@@ -445,45 +548,6 @@ public class StoreDataManager {
 		
 		return register;
 		
-	}
-	
-	
-	/**
-	 * Se pasan todos los tipos con su respectivo encabezado
-	 * para ser leidos cuando son extraídos
-	 * 
-	 * @param type Tipo de información que se almacena dentro
-	 * en el registro
-	 * 
-	 * @param data información que se almacena en el registro
-	 * 
-	 * @return un arreglo de bytes que representa al registro 
-	 * completo
-	 */
-	private byte[] toBytesAux(String type, String data){
-		switch(type){
-			case TYPE_INTEGER:
-				int integer = Integer.parseInt(data);
-				byte[] integer_array = int2bytes(integer);
-				return makeRegister(BY_TYPE_INTEGER, integer_array.length, integer_array);
-				
-			case TYPE_NULL:
-				byte[] null_array = {(byte)0x00};
-				return makeRegister(BY_TYPE_NULL, null_array.length, null_array);
-				
-			case TYPE_DECIMAL:
-				float float_value = Float.parseFloat(data);
-				byte[] float_array = float2bytes(float_value);
-				return makeRegister(BY_TYPE_DECIMAL, float_array.length, float_array);
-				
-			case TYPE_CHAR:
-				byte[] char_array = data.getBytes();
-				return makeRegister(BY_TYPE_CHAR, char_array.length, char_array);
-				
-			default:
-				byte[] string_array = data.getBytes();
-				return makeRegister(BY_TYPE_VARCHAR, string_array.length, string_array);
-		}
 	}
 	
 	/**
@@ -632,7 +696,7 @@ public class StoreDataManager {
 	 */
 	private String byteSwitch(byte[] bytes, int offset, int length, byte type){
 		switch(type){
-			case(BY_TYPE_NULL):
+			case(NULL_VALUE):
 				return "NULL";
 			case(BY_TYPE_INTEGER):
 				int num_int = ByteBuffer.wrap(bytes).getInt(offset);
@@ -678,5 +742,31 @@ public class StoreDataManager {
 	private byte[] float2bytes(float num){
 		return ByteBuffer.allocate(4).putFloat(num).array();
 	}
+	
+	/**
+	 * Concatena dos arreglos de bytes creando un nuevo arreglo
+	 * 
+	 * @param by_array1 primer arreglo a concatenar que va al
+	 * inicio del nuevo arreglo
+	 * 
+	 * @param by_array2 segundo arreglo a concatenar que va al
+	 * final del nuevo arreglo
+	 * 
+	 * @return un nuevo arreglo con los dos arreglos concatenados
+	 */
+	private byte[] byteArrayConcatenate(byte[] by_array1, byte[] by_array2){
+		byte[] res = new byte[by_array1.length + by_array2.length];
+		
+		for (int i = 0; i < by_array1.length; i++) {
+			res[i] = by_array1[i];
+		}
+		
+		for (int i = 0; i < by_array2.length; i++) {
+			res[by_array1.length+i] = by_array2[i];
+		}
+		
+		return res;
+	}
+	
 	
 }
