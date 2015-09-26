@@ -1,6 +1,7 @@
 package main;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 
 import store_data_manager.StoreDataManager;
 import urSQL.System.TableAttribute;
@@ -40,10 +41,42 @@ public class Main {
 		
 		//sdm.insertRow("esquemita", tmd, data);
 		
-		String row = sdm.getRow("604170973", "esquemita", "Tablita");
+		/*String[] data = {"Arturo", "Mora", "103650471", "2.156"};
 		
-		System.out.println("Fila: " + row);
+		sdm.insertRow("esquemita", tmd, data);
 		
+		String[] data2 = {"Manuel", "Mora", "104370624", "1.2365"};
+		
+		sdm.insertRow("esquemita", tmd, data2);
+		
+		String[] data3 = {"Hector", "Porras", "105630624", "2.314"};
+		
+		sdm.insertRow("esquemita", tmd, data3);*/
+		
+		//String row = sdm.getRow("604170973", "esquemita", "Tablita");
+		
+		//System.out.println("Fila: " + row);
+		
+		printTable(sdm.getTable("esquemita", "Tablita"));
+		
+	}
+	
+	public static void printList(ArrayList<String> row){
+		Iterator<String> iterator = row.iterator();
+		
+		while(iterator.hasNext()){
+			System.out.print("|" + iterator.next() +"|");
+		}
+		
+	}
+	
+	public static void printTable(ArrayList<ArrayList<String>> table){
+		Iterator<ArrayList<String>> iterator = table.iterator();
+		
+		while(iterator.hasNext()){
+			printList(iterator.next());
+			System.out.println();
+		}
 	}
 
 }

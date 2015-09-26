@@ -46,16 +46,29 @@ public class StoreDataManager {
 	
 	/**************************TIPOS EN BYTES******************************/
 	
+	/**
+	 * Byte, se escribe cuando una columna es nula
+	 */
 	private static final byte NULL_VALUE = (byte)0x00;
-	
+	/**
+	 * Byte de tipo entero
+	 */
 	private static final byte BY_TYPE_INTEGER = (byte)0x01;
-	
+	/**
+	 * Byte de tipo char
+	 */
 	private static final byte BY_TYPE_CHAR = (byte)0x02;
-	
+	/**
+	 * Byte de tipo varchar
+	 */
 	private static final byte BY_TYPE_VARCHAR = (byte)0x03;
-	
+	/**
+	 * Byte de tipo decimal, como el float
+	 */
 	private static final byte BY_TYPE_DECIMAL = (byte)0x04;
-	
+	/**
+	 * Byte de tipo fecha
+	 */
 	private static final byte BY_TYPE_DATE = (byte)0x05;
 	
 	/**************************KEYS DE CONTROL****************************/
@@ -336,7 +349,6 @@ public class StoreDataManager {
 	}
 	
 	
-	
 	/**
 	 * Agrega una fila en una tabla de una base de datos.
 	 * 
@@ -382,12 +394,12 @@ public class StoreDataManager {
 					else {
 						//Si la llave primaria es nula
 						if(key.compareTo("null") == 0){
-							System.err.format("La llave primaria de la fila es nula");
+							System.err.format("La llave primaria de la fila es nula\n");
 							tree.Shutdown();
 						}
 						//si la llave ya esta
 						else if(tree.ContainsKey(key)){
-							System.err.format("La llave primaria ya se encuentra en el arbol");
+							System.err.format("La llave primaria ya se encuentra en el arbol\n");
 							tree.Shutdown();
 						}
 						//inserta si no hay problema con la llave
@@ -492,9 +504,16 @@ public class StoreDataManager {
 	private byte[] toBytesAux(String type, String data){
 		switch(type){
 			case TableAttribute.TYPE_INT:
-				int integer = Integer.parseInt(data);
-				byte[] integer_array = int2bytes(integer);
-				return makeRegister(BY_TYPE_INTEGER, integer_array.length, integer_array);
+				if(data.compareTo("null") == 0){
+					byte[] nullbyte0 = new byte[1];
+					nullbyte0[0] = NULL_VALUE;
+					return makeRegister(NULL_VALUE, nullbyte0.length, nullbyte0);
+				}else{
+					int integer = Integer.parseInt(data);
+					byte[] integer_array = int2bytes(integer);
+					return makeRegister(BY_TYPE_INTEGER, integer_array.length, integer_array);
+				}
+				
 				
 			case TableAttribute.TYPE_DECIMAL:
 				float float_value = Float.parseFloat(data);
@@ -697,7 +716,7 @@ public class StoreDataManager {
 	private String byteSwitch(byte[] bytes, int offset, int length, byte type){
 		switch(type){
 			case(NULL_VALUE):
-				return "NULL";
+				return "null";
 			case(BY_TYPE_INTEGER):
 				int num_int = ByteBuffer.wrap(bytes).getInt(offset);
 				return String.valueOf(num_int);
@@ -709,6 +728,106 @@ public class StoreDataManager {
 		}
 	}
 	
+	/**
+	 * Retorna todos los datos de la tabla, en forma de ArrayList de ArrayList
+	 * 
+	 * @param database_name nombre de la base de datos 
+	 * 
+	 * @param table_name nombre de la tabla
+	 * 
+	 * @return ArrayList de ArrayList que representa la tabla
+	 */
+	public ArrayList<ArrayList<String>> getTable(String database_name, String table_name){
+		//tabla resultante
+		ArrayList<ArrayList<String>> table = new ArrayList<ArrayList<String>>();
+		//archivo de la base de datos o esquema
+		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		//si no existe el archivo
+		if(!file_tree.exists()){
+			System.err.format("La base de datos %s no existe\n", database_name);
+			return table;
+		}
+		//si existe la base de datos
+		else{
+			//se crean los archivos de tabla
+			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
+			file_tree = new File(file_tree, table_name + TREE_SUFIX);
+			//si no existe algun archivo
+			if(!file_blocks.exists() || !file_tree.exists()){
+				System.err.format("La tabla %s en la base de datos %s no existe\n", table_name, database_name);
+				return table;
+			}
+			else{
+				try {
+					//arbol de la tabla
+					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+							new RandomAccessFile(file_blocks, "rw"));
+					//llave temporal 
+					String tmp_key = tree.NextKey(PK_INDEX);
+					
+					while(tmp_key != null){
+						//registro en bytes
+						byte[] tmp_register = tree.get(tmp_key);
+						//se crea la fila
+						ArrayList<String> tmp_row = byteArray2List(tmp_register);
+						//se agrega la fila
+						table.add(tmp_row);
+						//se cambia a la proxima llave
+						tmp_key = tree.NextKey(tmp_key);
+					}
+					//se retorna la tabla
+					return table;
+					
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+		}
+		return table;
+	}
+	
+	/**
+	 * Crea una lista de String con los valores de 
+	 * de los registros en string
+	 * 
+	 * @param array arreglo de bytes que corresponde al registro de 
+	 * de la fila 
+	 * 
+	 * @return ArrayList de String que contiene los datos
+	 */
+	public ArrayList<String> byteArray2List(byte[] array){
+		//lista con los string 
+		ArrayList<String> result_list = new ArrayList<String>();
+		//indice por el cual va 
+		int current_index = 0;
+		//offset de por donde se va a leer
+		int offset = 3;
+		//cantidad de bytes que se van a leer
+		int length = 0;
+		//tipo de valor del que se va a leer
+		byte type = (byte)0x00;
+		
+		while(current_index < array.length){
+			//se toma el tipo
+			type = array[current_index];
+			//se toma cuantos bytes ocupa
+			length = (int)ByteBuffer.wrap(array, current_index+1, 2).getShort();
+			//se obtiene el valor en string
+			String tmp = byteSwitch(array, offset, length, type);
+			//se hace apend de lo que se lee
+			result_list.add(tmp);
+			//se establecen los valores para el proximo subregistro
+			current_index = current_index + length + 3;
+			offset = offset + length + 3;
+		}
+		
+		return result_list;
+		
+	}
 	
 	/**
 	 * Convierte un entero a arreglo de bytes
