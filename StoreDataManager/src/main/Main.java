@@ -53,9 +53,13 @@ public class Main {
 		
 		sdm.insertRow("esquemita", tmd, data3);*/
 		
-		//String row = sdm.getRow("604170973", "esquemita", "Tablita");
+		printTable(sdm.getTable("esquemita", "Tablita"));
 		
-		//System.out.println("Fila: " + row);
+		String[] n_data = {"Andres", "Brais", "604170973", "8.5648"};
+		
+		sdm.updateRegister("esquemita", "Tablita", "604170973", n_data);
+		
+		//sdm.deleteRow("esquemita", "Tablita", "104370624");
 		
 		printTable(sdm.getTable("esquemita", "Tablita"));
 		

@@ -69,7 +69,7 @@ public class StoreDataManager {
 	/**
 	 * Byte de tipo fecha
 	 */
-	private static final byte BY_TYPE_DATE = (byte)0x05;
+	private static final byte BY_TYPE_DATETIME = (byte)0x05;
 	
 	/**************************KEYS DE CONTROL****************************/
 	
@@ -325,7 +325,7 @@ public class StoreDataManager {
 				byte_type[0] = BY_TYPE_INTEGER;
 				break;
 			case TableAttribute.TYPE_DECIMAL:
-				byte_type[0] = BY_TYPE_INTEGER;
+				byte_type[0] = BY_TYPE_DECIMAL;
 				break;
 			case TableAttribute.TYPE_CHAR:
 				byte_type[0] = BY_TYPE_CHAR;
@@ -334,14 +334,14 @@ public class StoreDataManager {
 				byte_type[0] = BY_TYPE_VARCHAR;
 				break;
 			case TableAttribute.TYPE_DATETIME:
-				byte_type[0] = BY_TYPE_DATE;
+				byte_type[0] = BY_TYPE_DATETIME;
 				break;
 		}
 		byte[] by_str = attribute.getName().getBytes();
 		//bytes del registro y el tipo 
 		byte[] reg =  byteArrayConcatenate(byte_type, by_str);
 		
-		short size = (short)reg.length;
+		short size = (short)(reg.length-1);
 		//cuantos bytes ocupa el registro
 		byte[] by_size = short2bytes(size);
 		
@@ -526,7 +526,7 @@ public class StoreDataManager {
 				
 			case TableAttribute.TYPE_DATETIME:
 				byte[] date_array = data.getBytes();
-				return makeRegister(BY_TYPE_DATE, date_array.length, date_array);
+				return makeRegister(BY_TYPE_DATETIME, date_array.length, date_array);
 				
 			default:
 				byte[] string_array = data.getBytes();
@@ -799,7 +799,7 @@ public class StoreDataManager {
 	 * 
 	 * @return ArrayList de String que contiene los datos
 	 */
-	public ArrayList<String> byteArray2List(byte[] array){
+	private ArrayList<String> byteArray2List(byte[] array){
 		//lista con los string 
 		ArrayList<String> result_list = new ArrayList<String>();
 		//indice por el cual va 
@@ -828,6 +828,201 @@ public class StoreDataManager {
 		return result_list;
 		
 	}
+	
+	/**
+	 * Elimina una fila por la llave de la fila.
+	 * 
+	 * @param database_name nombre de la base de datos
+	 * 
+	 * @param table_name nombre de la tabla donde se va a 
+	 * borrar la fila
+	 * 
+	 * @param key llave que se va a borrar
+	 */
+	public void deleteRow(String database_name, String table_name, String key){
+		//se verifica que exista la carpeta de bases de datos
+		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		//si el no existe la base de datos
+		if(!file_tree.exists()){
+			System.err.format("La base de datos %s no existe\n");
+		}
+		else{
+			//se verifica que existan los archivos de las tablas 
+			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
+			file_tree = new File(file_tree, table_name + TREE_SUFIX);
+			//si no existen los archivos de la tabla
+			if(!file_blocks.exists() || !file_tree.exists()){
+				System.err.format("La tabla con el nombre %s no ha sido creada\n"
+						+ "o algun archivo a sido corrompido\n", table_name);
+			}
+			//si si existen
+			else{
+				try {
+					//se crea el arbol
+					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+							new RandomAccessFile(file_blocks, "rw"));
+					//si no esta la llave
+					if(!tree.ContainsKey(key)){
+						System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
+								table_name, database_name);
+						tree.Shutdown();
+					}
+					else{
+						tree.RemoveKey(key);
+						tree.Commit();
+						tree.Shutdown();
+						System.out.format("La llave %s fue borrada correctamente de la tabla %s\n", key, table_name);
+					}
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+	
+	/**
+	 * Se actualiza un registro de la tabla
+	 * 
+	 * @param database_name nombre de la base de datos
+	 * 
+	 * @param table_name nombre de la tabla donde se va 
+	 * a actulizar
+	 * 
+	 * @param key llave del registro que se va a actualizar
+	 * 
+	 * @param data nueva información de que se va a escribir
+	 */
+	public void updateRegister(String database_name, String table_name, String key, String[] data){
+		//se verifica que exista la carpeta de bases de datos
+				File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+				//si el no existe la base de datos
+				if(!file_tree.exists()){
+					System.err.format("La base de datos %s no existe\n");
+				}
+				else{
+					//se verifica que existan los archivos de las tablas 
+					File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
+					file_tree = new File(file_tree, table_name + TREE_SUFIX);
+					//si no existen los archivos de la tabla
+					if(!file_blocks.exists() || !file_tree.exists()){
+						System.err.format("La tabla con el nombre %s no ha sido creada\n"
+								+ "o algun archivo a sido corrompido\n", table_name);
+					}
+					//si si existen
+					else{
+						try {
+							//se crea el arbol
+							xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+									new RandomAccessFile(file_blocks, "rw"));
+							//si no esta la llave
+							if(!tree.ContainsKey(key)){
+								System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
+										table_name, database_name);
+								tree.Shutdown();
+							}
+							else{
+								//se obtiene la información de las columnas
+								byte[] b_pk_index = tree.get(PK_INDEX);
+								int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
+								
+								String tmp_key = data[pk_index];
+								if(key.compareTo(tmp_key)!=0){
+									System.err.format("Se quiere actualizar un registro con llave %s\n"
+											+ "diferente a la llave del registro anterior %s\n", key, tmp_key);
+									tree.Shutdown();
+								}
+								else{
+									//metada de la tabla
+									byte[] metadata = tree.get(METADATA_KEY);
+									//Vector con tipos e información
+									Vector<Pair<String,String>> vec = readMetadata(metadata, data);
+									//se convierte el arreglo a bytes
+									byte[] register = toBytes(vec);
+									//se escribe el nuevo registro
+									tree.set(key, register);
+									//se actualiza y se cierra el arbol
+									tree.Commit();
+									tree.Shutdown();
+								}
+							}
+						} catch (FileNotFoundException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						} catch (Exception e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+					}
+				}
+	}
+	
+	/**
+	 * Convierte la metadata y la data en un vector, donde cada 
+	 * atributo de la base de datos tiene un indice 
+	 * 
+	 * @param metadata Información de la tabla que esta almacenada
+	 *  
+	 * @param data informaicón que se va a escribir
+	 * 
+	 * @return Vector que contiene llaves e información.
+	 */
+	private Vector<Pair<String,String>> readMetadata(byte[] metadata, String[] data){
+		//vector con pares de tipo e informacion
+		Vector<Pair<String, String>> result = new Vector<Pair<String, String>>();
+		//tamaño del registro
+		int length = 0;
+		//tipo del registro
+		String type = "";
+		//posicion actual que se analiza
+		int index = 0;
+		//posicion de la información
+		int data_index = 0;
+		
+		while(index < metadata.length){
+			//se toma el tamaño
+			length = (int)ByteBuffer.wrap(metadata).getShort(index);
+			//por cada tipo se hace cambia el tipo
+			switch(metadata[index+2]){
+			
+				case BY_TYPE_INTEGER:
+					type = TableAttribute.TYPE_INT;
+					break;
+					
+				case BY_TYPE_DECIMAL:
+					type = TableAttribute.TYPE_DECIMAL;
+					break;
+					
+				case BY_TYPE_VARCHAR:
+					type = TableAttribute.TYPE_VARCHAR;
+					break;
+					
+				case BY_TYPE_CHAR:
+					type = TableAttribute.TYPE_CHAR;
+					break;
+				
+				case BY_TYPE_DATETIME:
+					type = TableAttribute.TYPE_DATETIME;
+					break;
+					
+				default:
+					System.err.format("Hubo un problema con el tipo de dato\n");
+					break;
+			}
+			
+			Pair<String, String> tmp_par = new Pair<String, String>(type, data[data_index]);
+			result.addElement(tmp_par);
+			
+			index = index + 3 + length;
+			data_index++;
+		}
+		
+		return result;
+	}
+	
 	
 	/**
 	 * Convierte un entero a arreglo de bytes
