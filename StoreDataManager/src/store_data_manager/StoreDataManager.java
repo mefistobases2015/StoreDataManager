@@ -30,7 +30,7 @@ public class StoreDataManager {
 	/**
 	 * Este es la dirección donde se van a almacenar las bases de datos.
 	 */
-	private static final String DATABASES_PATH = System.getProperty("user.dir") + FILE_SEPARATOR +"DatabasesSchemes";
+	private static final String DATABASES_PATH = System.getProperty("user.dir") + FILE_SEPARATOR +"DATABASES";
 	/**
 	 * Sufijo del nombre de los archivos de arbol
 	 */
@@ -39,10 +39,6 @@ public class StoreDataManager {
 	 * Sufijo del nombre de los archivos de bloques de informacion
 	 */
 	private static final String BLOCKS_SUFFIX = "_BLOCKS";
-	/**
-	 * Llave que se usa siempre para la cantidad de columnas en 
-	 * una tabla
-	 */
 	
 	/**************************TIPOS EN BYTES******************************/
 	
@@ -93,7 +89,7 @@ public class StoreDataManager {
 	 */
 	public StoreDataManager(){
 		//Archivo de donde esta la base
-		File databases_dir = new File(StoreDataManager.DATABASES_PATH);
+		File databases_dir = new File(DATABASES_PATH);
 		
 		//si el arhivo no existe lo crea 
 		if(!databases_dir.exists()){
@@ -114,9 +110,9 @@ public class StoreDataManager {
 	 * @param database_name nombre de nueva base de 
 	 * datos 
 	 */
-	public void createDatabaseScheme(String database_name){
+	public void createDatabase(String database_name){
 		//se crea el archivo de donde iria el archivo
-		File database = new File(StoreDataManager.DATABASES_PATH + "/" + database_name);
+		File database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 		//si la base de datos ya esta creada
 		if(database.exists()){
 			System.err.format("La base de datos con el nombre %s ya ha sido creada\n", database_name);
@@ -235,51 +231,64 @@ public class StoreDataManager {
 		}
 		//Si el archivo existe
 		else if(database.exists()){
-			File tree_file = new File(database, table_name + TREE_SUFIX); 
-			File block_file = new File(database, table_name + BLOCKS_SUFFIX);
-			
-			try {
-				xBplusTreeBytes tree = xBplusTreeBytes.Initialize(new RandomAccessFile(tree_file, "rw"),
-						new RandomAccessFile(block_file, "rw"), 10);
-				//guarda en el arbol la cantidad de columnas 
-				short colq_q_sh = (short) metadata.getTableColumns().size();
-				byte[] colq_quant_by = short2bytes(colq_q_sh);
-				
-				tree.set(COLUMN_QUANTITY_KEY, colq_quant_by);
-				
-				//agrega el indice de la llave primaria
-				short pk_index_sh = (short) metadata.getTableColumns().indexOf(metadata.getPrimaryKey());
-				byte[] pk_index_by = short2bytes(pk_index_sh);
-				
-				tree.set(PK_INDEX, pk_index_by);
-				
-				byte[] columns_metadata = writeMetadata(metadata);
-				
-				tree.set(METADATA_KEY, columns_metadata);
-				
-				
-				//se envia todo al arbol
-				tree.Commit();
-				
-				if(tree.ContainsKey(COLUMN_QUANTITY_KEY) && tree.ContainsKey(PK_INDEX) &&
-						tree.ContainsKey(METADATA_KEY)){
-					System.out.format("La tabla %s ha sido creada correctamente\n", table_name);
-				}else{
-					System.err.format("Hubo un problema al crear la tabla %s\n", table_name);
-				}
-				
-				//cierra el arbol
-				tree.Shutdown();
-				
-			} catch (FileNotFoundException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				System.out.format("Hubo un error al crear el archivo de la tabla %s\n", table_name);
-			} catch (Exception e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-				System.out.format("Hubo un error satanico al crear el arbol de la tabla %s\n", table_name);
+			//se crea la tabla que sigue
+			File table = new File(database, table_name);
+			//se comprueba si existe
+			if(table.exists()){
+				System.err.format("La tabla %s ya habia sido creada\n", table_name);
 			}
+			//si no existe
+			else{
+				table.mkdirs();
+				//Crea los archivos de los arboles 
+				File tree_file = new File(table, table_name + TREE_SUFIX);
+				File block_file = new File(table, table_name + BLOCKS_SUFFIX);
+				
+				try {
+					//crea el arbol
+					xBplusTreeBytes tree = xBplusTreeBytes.Initialize(new RandomAccessFile(tree_file, "rw"),
+							new RandomAccessFile(block_file, "rw"), 10);
+					//guarda en el arbol la cantidad de columnas 
+					short colq_q_sh = (short) metadata.getTableColumns().size();
+					byte[] colq_quant_by = short2bytes(colq_q_sh);
+					
+					tree.set(COLUMN_QUANTITY_KEY, colq_quant_by);
+					
+					//agrega el indice de la llave primaria
+					short pk_index_sh = (short) metadata.getTableColumns().indexOf(metadata.getPrimaryKey());
+					byte[] pk_index_by = short2bytes(pk_index_sh);
+					
+					tree.set(PK_INDEX, pk_index_by);
+					
+					byte[] columns_metadata = writeMetadata(metadata);
+					
+					tree.set(METADATA_KEY, columns_metadata);
+					
+					
+					//se envia todo al arbol
+					tree.Commit();
+					
+					if(tree.ContainsKey(COLUMN_QUANTITY_KEY) && tree.ContainsKey(PK_INDEX) &&
+							tree.ContainsKey(METADATA_KEY)){
+						System.out.format("La tabla %s ha sido creada correctamente\n", table_name);
+					}else{
+						System.err.format("Hubo un problema al crear la tabla %s\n", table_name);
+					}
+					
+					//cierra el arbol
+					tree.Shutdown();
+					
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					System.out.format("Hubo un error al crear el archivo de la tabla %s\n", table_name);
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					System.out.format("Hubo un error satanico al crear el arbol de la tabla %s\n", table_name);
+				}
+			}
+		
 		}
 	}
 
@@ -361,78 +370,88 @@ public class StoreDataManager {
 	 */
 	public void insertRow(String database_name, TableMetadata metadata, String[] data){
 		//se verifica que exista la carpeta de bases de datos
-		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		File file_database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 		//nombre de la tabla
 		String table_name = metadata.getTableName();
-		if(!file_tree.exists()){
+		if(!file_database.exists()){
 			//la base de datos no existe
 			System.err.format("La base de datos con el nombre %s no ha sido creada\n", database_name);
 		}
+		//si el archivo existe
 		else{
-			//se verifica que existan los archivos de las tablas 
-			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
-			file_tree = new File(file_tree, table_name + TREE_SUFIX);
-			if(!file_blocks.exists() || !file_tree.exists()){
-				System.err.format("La tabla con el nombre %s no ha sido creada\n"
-						+ "o algun archivo a sido corrompido\n", table_name);
-			}
-			else{
-				//si existen se crea el arbol
-				try {
-					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
-							new RandomAccessFile(file_blocks, "rw"));
-					//se obtiene el indice de la llave primaria
-					byte[] b_pk_index = tree.get(PK_INDEX);
-					int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
-					
-					String key = data[pk_index];
-					
-					if(metadata.getTableColumns().size() != data.length){
-						System.err.format("La fila debe tener %d columnas \n", metadata.getTableColumns().size());
-					}
-					//si cumple con la cantidad de columnas
-					else {
-						//Si la llave primaria es nula
-						if(key.compareTo("null") == 0){
-							System.err.format("La llave primaria de la fila es nula\n");
-							tree.Shutdown();
+			//se crea la carpeta de la tabla
+			File file_table = new File(file_database, table_name);
+			if(!file_table.exists()){
+				System.err.format("La tabla %s no se encuentra en la base de datos %s\n", table_name, database_name);
+			}else{
+				//se verifica que existan los archivos de las tablas 
+				File file_blocks = new File(file_table, table_name + BLOCKS_SUFFIX);
+				File file_tree = new File(file_table, table_name + TREE_SUFIX);
+				//se comprueba que existan los archivos
+				if(!file_blocks.exists() || !file_tree.exists()){
+					System.err.format("La tabla con el nombre %s no ha sido creada\n"
+							+ "o algun archivo a sido corrompido\n", table_name);
+				}
+				else{
+					//si existen se crea el arbol
+					try {
+						xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+								new RandomAccessFile(file_blocks, "rw"));
+						//se obtiene el indice de la llave primaria
+						byte[] b_pk_index = tree.get(PK_INDEX);
+						int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
+						
+						String key = data[pk_index];
+						
+						if(metadata.getTableColumns().size() != data.length){
+							System.err.format("La fila debe tener %d columnas \n", metadata.getTableColumns().size());
 						}
-						//si la llave ya esta
-						else if(tree.ContainsKey(key)){
-							System.err.format("La llave primaria ya se encuentra en el arbol\n");
-							tree.Shutdown();
-						}
-						//inserta si no hay problema con la llave
-						else{
-							//se cre aun vector con pares de tipo y datos 
-							//a partir de el data y metadata
-							Vector<Pair<String,String>> vec = convert2vec(metadata.getTableColumns(), data);
-							//crea el registro de bytes
-							byte[] register = toBytes(vec);
-							//se escribe en el arbol la fila
-							tree.set(key, register);
-							//se verifica que se haya insertado
-							if(!tree.ContainsKey(key)){
-								System.err.format("La fila de llave %s de la tabla %s no se pudo insertar correctamente\n",
-										key, table_name);
-							}
-							else{
-								tree.Commit();
+						//si cumple con la cantidad de columnas
+						else {
+							//Si la llave primaria es nula
+							if(key.compareTo("null") == 0){
+								System.err.format("La llave primaria de la fila es nula\n");
 								tree.Shutdown();
 							}
-							
+							//si la llave ya esta
+							else if(tree.ContainsKey(key)){
+								System.err.format("La llave primaria ya se encuentra en el arbol\n");
+								tree.Shutdown();
+							}
+							//inserta si no hay problema con la llave
+							else{
+								//se cre aun vector con pares de tipo y datos 
+								//a partir de el data y metadata
+								Vector<Pair<String,String>> vec = convert2vec(metadata.getTableColumns(), data);
+								//crea el registro de bytes
+								byte[] register = toBytes(vec);
+								//se escribe en el arbol la fila
+								tree.set(key, register);
+								//se verifica que se haya insertado
+								if(!tree.ContainsKey(key)){
+									System.err.format("La fila de llave %s de la tabla %s no se pudo insertar correctamente\n",
+											key, table_name);
+								}
+								else{
+									tree.Commit();
+									tree.Shutdown();
+								}
+								
+							}
 						}
+						
+					} catch (FileNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
-					
-				} catch (FileNotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
 				}
 			}
+			
 		}
+		
 	}
 	
 	/**
@@ -616,44 +635,53 @@ public class StoreDataManager {
 	public String getRow(String pk, String database_name, String table_name){
 		String result = "";
 		//se verifica que exista la carpeta de bases de datos
-		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
-		if(!file_tree.exists()){
+		File file_database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		if(!file_database.exists()){
 		//la base de datos no existe
 			System.err.format("La base de datos con el nombre %s no ha sido creada\n", database_name);
 		}
+		//si la base existe
 		else{
-			//se verifica que existan los archivos de las tablas 
-			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
-			file_tree = new File(file_tree, table_name + TREE_SUFIX);
-
-			if(!file_blocks.exists() || !file_tree.exists()){
-				System.err.format("La tabla con el nombre %s no ha sido creada\n"
-						+ "o algun archivo a sido corrompido\n", table_name);
+			File file_table = new File(file_database, table_name);
+			//si el archivo no existe
+			if(!file_table.exists()){
+				System.err.format("La tabla %s no existe en la base %s\n", table_name, database_name);
 			}
+			//si el archivo existe.
 			else{
-				//si existen los archivos se crea el arbol
-				try {
-					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
-							new RandomAccessFile(file_blocks, "rw"));
-					//comprueba que la llave se encuentre en el arbol
-					if(!tree.ContainsKey(pk)){
-						System.err.format("En la tabla %s de la base de datos %s no se\n"
-								+ "encuentra la llave primaria %s\n", table_name, database_name, pk);
+				//se verifica que existan los archivos de las tablas 
+				File file_blocks = new File(file_table, table_name + BLOCKS_SUFFIX);
+				File file_tree = new File(file_table, table_name + TREE_SUFIX);
+				if(!file_blocks.exists() || !file_tree.exists()){
+					System.err.format("La tabla con el nombre %s no ha sido creada\n"
+							+ "o algun archivo a sido corrompido\n", table_name);
+				}
+				//si existe
+				else{
+					//si existen los archivos se crea el arbol
+					try {
+						xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+								new RandomAccessFile(file_blocks, "rw"));
+						//comprueba que la llave se encuentre en el arbol
+						if(!tree.ContainsKey(pk)){
+							System.err.format("En la tabla %s de la base de datos %s no se\n"
+									+ "encuentra la llave primaria %s\n", table_name, database_name, pk);
+						}
+						//si se encuentra toma el registro
+						else{
+							byte[] register = tree.get(pk);
+							//apaga el arbol
+							tree.Shutdown();
+							//se convierte a string
+							result = parseByteArray2String(register);
+						}
+					} catch (FileNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
-					//si se encuentra toma el registro
-					else{
-						byte[] register = tree.get(pk);
-						//apaga el arbol
-						tree.Shutdown();
-						//se convierte a string
-						result = parseByteArray2String(register);
-					}
-				} catch (FileNotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
 				}
 			}
 		}
@@ -741,52 +769,62 @@ public class StoreDataManager {
 		//tabla resultante
 		ArrayList<ArrayList<String>> table = new ArrayList<ArrayList<String>>();
 		//archivo de la base de datos o esquema
-		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		File file_database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 		//si no existe el archivo
-		if(!file_tree.exists()){
+		if(!file_database.exists()){
 			System.err.format("La base de datos %s no existe\n", database_name);
 			return table;
 		}
-		//si existe la base de datos
+		//si el archivo existe
 		else{
-			//se crean los archivos de tabla
-			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
-			file_tree = new File(file_tree, table_name + TREE_SUFIX);
-			//si no existe algun archivo
-			if(!file_blocks.exists() || !file_tree.exists()){
-				System.err.format("La tabla %s en la base de datos %s no existe\n", table_name, database_name);
-				return table;
+			File file_table = new File(file_database, table_name);
+			//si no existe la tabla
+			if(!file_table.exists()){
+				System.err.format("La tabla %s no existe en la base %s\n", table_name, database_name);
 			}
+			//si la tabla existe
 			else{
-				try {
-					//arbol de la tabla
-					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
-							new RandomAccessFile(file_blocks, "rw"));
-					//llave temporal 
-					String tmp_key = tree.NextKey(PK_INDEX);
-					
-					while(tmp_key != null){
-						//registro en bytes
-						byte[] tmp_register = tree.get(tmp_key);
-						//se crea la fila
-						ArrayList<String> tmp_row = byteArray2List(tmp_register);
-						//se agrega la fila
-						table.add(tmp_row);
-						//se cambia a la proxima llave
-						tmp_key = tree.NextKey(tmp_key);
-					}
-					//se retorna la tabla
+				//se crean los archivos de tabla
+				File file_blocks = new File(file_table, table_name + BLOCKS_SUFFIX);
+				File file_tree = new File(file_table, table_name + TREE_SUFIX);
+				//si no existe algun archivo
+				if(!file_blocks.exists() || !file_tree.exists()){
+					System.err.format("La tabla %s en la base de datos %s no existe\n", table_name, database_name);
 					return table;
-					
-				} catch (FileNotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+				}
+				//si el archivo existe
+				else{
+					try {
+						//arbol de la tabla
+						xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+								new RandomAccessFile(file_blocks, "rw"));
+						//llave temporal 
+						String tmp_key = tree.NextKey(PK_INDEX);
+						
+						while(tmp_key != null){
+							//registro en bytes
+							byte[] tmp_register = tree.get(tmp_key);
+							//se crea la fila
+							ArrayList<String> tmp_row = byteArray2List(tmp_register);
+							//se agrega la fila
+							table.add(tmp_row);
+							//se cambia a la proxima llave
+							tmp_key = tree.NextKey(tmp_key);
+						}
+						//se retorna la tabla
+						return table;
+						
+					} catch (FileNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
 				}
 			}
 		}
+		
 		return table;
 	}
 	
@@ -841,47 +879,58 @@ public class StoreDataManager {
 	 */
 	public void deleteRow(String database_name, String table_name, String key){
 		//se verifica que exista la carpeta de bases de datos
-		File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+		File file_database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 		//si el no existe la base de datos
-		if(!file_tree.exists()){
-			System.err.format("La base de datos %s no existe\n");
+		if(!file_database.exists()){
+			System.err.format("La base de datos %s no existe\n", database_name);
 		}
+		//si existe toma el de la tabla
 		else{
-			//se verifica que existan los archivos de las tablas 
-			File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
-			file_tree = new File(file_tree, table_name + TREE_SUFIX);
-			//si no existen los archivos de la tabla
-			if(!file_blocks.exists() || !file_tree.exists()){
-				System.err.format("La tabla con el nombre %s no ha sido creada\n"
-						+ "o algun archivo a sido corrompido\n", table_name);
+			//carpeta de la tabla
+			File file_table = new File(file_database, table_name);
+			//si no existe
+			if(!file_table.exists()){
+				System.err.format("La tabla %s de la base de datos %s no existe\n", table_name, database_name);
 			}
-			//si si existen
+			//si existe
 			else{
-				try {
-					//se crea el arbol
-					xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
-							new RandomAccessFile(file_blocks, "rw"));
-					//si no esta la llave
-					if(!tree.ContainsKey(key)){
-						System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
-								table_name, database_name);
-						tree.Shutdown();
+				//se verifica que existan los archivos de las tablas 
+				File file_blocks = new File(file_table, table_name + BLOCKS_SUFFIX);
+				File file_tree = new File(file_table, table_name + TREE_SUFIX);
+				//si no existen los archivos de la tabla
+				if(!file_blocks.exists() || !file_tree.exists()){
+					System.err.format("La tabla con el nombre %s no ha sido creada\n"
+							+ "o algun archivo a sido corrompido\n", table_name);
+				}
+				//si ambos existen
+				else{
+					try {
+						//se crea el arbol
+						xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+								new RandomAccessFile(file_blocks, "rw"));
+						//si no esta la llave
+						if(!tree.ContainsKey(key)){
+							System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
+									table_name, database_name);
+							tree.Shutdown();
+						}
+						else{
+							tree.RemoveKey(key);
+							tree.Commit();
+							tree.Shutdown();
+							System.out.format("La llave %s fue borrada correctamente de la tabla %s\n", key, table_name);
+						}
+					} catch (FileNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} catch (Exception e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
 					}
-					else{
-						tree.RemoveKey(key);
-						tree.Commit();
-						tree.Shutdown();
-						System.out.format("La llave %s fue borrada correctamente de la tabla %s\n", key, table_name);
-					}
-				} catch (FileNotFoundException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} catch (Exception e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
 				}
 			}
 		}
+		
 	}
 	
 	/**
@@ -898,66 +947,74 @@ public class StoreDataManager {
 	 */
 	public void updateRegister(String database_name, String table_name, String key, String[] data){
 		//se verifica que exista la carpeta de bases de datos
-				File file_tree = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
+				File file_database = new File(DATABASES_PATH + FILE_SEPARATOR + database_name);
 				//si el no existe la base de datos
-				if(!file_tree.exists()){
+				if(!file_database.exists()){
 					System.err.format("La base de datos %s no existe\n");
 				}
 				else{
-					//se verifica que existan los archivos de las tablas 
-					File file_blocks = new File(file_tree, table_name + BLOCKS_SUFFIX);
-					file_tree = new File(file_tree, table_name + TREE_SUFIX);
-					//si no existen los archivos de la tabla
-					if(!file_blocks.exists() || !file_tree.exists()){
-						System.err.format("La tabla con el nombre %s no ha sido creada\n"
-								+ "o algun archivo a sido corrompido\n", table_name);
+					File file_table = new File(file_database, table_name);
+					
+					if(!file_table.exists()){
+						System.err.format("La tabla %s de la base %s no existe\n", table_name, database_name);
 					}
-					//si si existen
 					else{
-						try {
-							//se crea el arbol
-							xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
-									new RandomAccessFile(file_blocks, "rw"));
-							//si no esta la llave
-							if(!tree.ContainsKey(key)){
-								System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
-										table_name, database_name);
-								tree.Shutdown();
-							}
-							else{
-								//se obtiene la información de las columnas
-								byte[] b_pk_index = tree.get(PK_INDEX);
-								int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
-								
-								String tmp_key = data[pk_index];
-								if(key.compareTo(tmp_key)!=0){
-									System.err.format("Se quiere actualizar un registro con llave %s\n"
-											+ "diferente a la llave del registro anterior %s\n", key, tmp_key);
+						//se verifica que existan los archivos de las tablas 
+						File file_blocks = new File(file_table, table_name + BLOCKS_SUFFIX);
+						File file_tree = new File(file_table, table_name + TREE_SUFIX);
+						//si no existen los archivos de la tabla
+						if(!file_blocks.exists() || !file_tree.exists()){
+							System.err.format("La tabla con el nombre %s no ha sido creada\n"
+									+ "o algun archivo a sido corrompido\n", table_name);
+						}
+						//si existen
+						else{
+							try {
+								//se crea el arbol
+								xBplusTreeBytes tree = xBplusTreeBytes.ReOpen(new RandomAccessFile(file_tree, "rw"), 
+										new RandomAccessFile(file_blocks, "rw"));
+								//si no esta la llave
+								if(!tree.ContainsKey(key)){
+									System.err.format("La llave %s no se encuentra en la tabla %s de la base de datos %s\n", key, 
+											table_name, database_name);
 									tree.Shutdown();
 								}
 								else{
-									//metada de la tabla
-									byte[] metadata = tree.get(METADATA_KEY);
-									//Vector con tipos e información
-									Vector<Pair<String,String>> vec = readMetadata(metadata, data);
-									//se convierte el arreglo a bytes
-									byte[] register = toBytes(vec);
-									//se escribe el nuevo registro
-									tree.set(key, register);
-									//se actualiza y se cierra el arbol
-									tree.Commit();
-									tree.Shutdown();
+									//se obtiene la información de las columnas
+									byte[] b_pk_index = tree.get(PK_INDEX);
+									int pk_index = (int)ByteBuffer.wrap(b_pk_index).getShort();
+									
+									String tmp_key = data[pk_index];
+									if(key.compareTo(tmp_key)!=0){
+										System.err.format("Se quiere actualizar un registro con llave %s\n"
+												+ "diferente a la llave del registro anterior %s\n", key, tmp_key);
+										tree.Shutdown();
+									}
+									else{
+										//metada de la tabla
+										byte[] metadata = tree.get(METADATA_KEY);
+										//Vector con tipos e información
+										Vector<Pair<String,String>> vec = readMetadata(metadata, data);
+										//se convierte el arreglo a bytes
+										byte[] register = toBytes(vec);
+										//se escribe el nuevo registro
+										tree.set(key, register);
+										//se actualiza y se cierra el arbol
+										tree.Commit();
+										tree.Shutdown();
+									}
 								}
+							} catch (FileNotFoundException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							} catch (Exception e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
 							}
-						} catch (FileNotFoundException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						} catch (Exception e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
 						}
 					}
 				}
+				
 	}
 	
 	/**

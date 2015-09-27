@@ -14,7 +14,7 @@ public class Main {
 		
 		StoreDataManager sdm = new StoreDataManager();
 		
-		//sdm.createDatabaseScheme("esquemita");
+		//sdm.createDatabase("esquemita");
 		
 		
 		TableAttribute ta1 = new TableAttribute("Nombre", TableAttribute.TYPE_VARCHAR);
@@ -55,11 +55,11 @@ public class Main {
 		
 		printTable(sdm.getTable("esquemita", "Tablita"));
 		
-		String[] n_data = {"Andres", "Brais", "604170973", "8.5648"};
+		//String[] n_data = {"Andres", "Brais", "604170973", "8.5648"};
 		
-		sdm.updateRegister("esquemita", "Tablita", "604170973", n_data);
+		//sdm.updateRegister("esquemita", "Tablita", "604170973", n_data);
 		
-		//sdm.deleteRow("esquemita", "Tablita", "104370624");
+		sdm.deleteRow("esquemita", "Tablita", "104370624");
 		
 		printTable(sdm.getTable("esquemita", "Tablita"));
 		
